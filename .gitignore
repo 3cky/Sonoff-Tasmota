@@ -1,3 +1,5 @@
+sonoff/user_config_override.h
+lib/readme.txt
 .pioenvs
 .piolibdeps
 .clang_complete
