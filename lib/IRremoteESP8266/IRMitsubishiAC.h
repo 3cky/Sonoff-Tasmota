@@ -42,9 +42,8 @@ class IRMitsubishiAC
 
     private:
         // The state of the IR remote in IR code form.
-        // Known good state obtained from:
-        //   https://github.com/r45635/HVAC-IR-Control/blob/master/HVAC_ESP8266/HVAC_ESP8266.ino#L108
-        uint8_t known_good_state[MITSUBISHI_AC_STATE_LENGTH] = { 0x23, 0xCB, 0x26, 0x01, 0x00, 0x20, 0x08, 0x06, 0x30, 0x45, 0x67, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1F };
+        // Known good state obtained from SG11D remote (ON/COOL/AUTO/27C)
+        uint8_t known_good_state[MITSUBISHI_AC_STATE_LENGTH] = { 0x23, 0xCB, 0x26, 0x01, 0x00, 0x20, 0x18, 0x0B, 0x36, 0x40, 0x4D, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x1D };
         uint8_t remote_state[MITSUBISHI_AC_STATE_LENGTH];
 
         void checksum();
