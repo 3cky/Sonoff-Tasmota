@@ -1,5 +1,5 @@
 /*
-  xsns_sht1x.ino - SHT1x temperature and sensor support for Sonoff-Tasmota
+  xsns_07_sht1x.ino - SHT1x temperature and sensor support for Sonoff-Tasmota
 
   Copyright (C) 2017  Theo Arends
 
@@ -34,9 +34,9 @@ enum {
 
 uint8_t sht_sda_pin;
 uint8_t sht_scl_pin;
-uint8_t shttype = 0;
+uint8_t sht_type = 0;
 
-boolean sht_reset()
+boolean ShtReset()
 {
   pinMode(sht_sda_pin, INPUT_PULLUP);
   pinMode(sht_scl_pin, OUTPUT);
@@ -45,12 +45,12 @@ boolean sht_reset()
     digitalWrite(sht_scl_pin, HIGH);
     digitalWrite(sht_scl_pin, LOW);
   }
-  boolean success = sht_sendCommand(SHT1X_CMD_SOFT_RESET);
+  boolean success = ShtSendCommand(SHT1X_CMD_SOFT_RESET);
   delay(11);
   return success;
 }
 
-boolean sht_sendCommand(const byte cmd)
+boolean ShtSendCommand(const byte cmd)
 {
   pinMode(sht_sda_pin, OUTPUT);
   // Transmission Start sequence
@@ -76,13 +76,13 @@ boolean sht_sendCommand(const byte cmd)
     ackerror = true;
   }
   if (ackerror) {
-    shttype = 0;
-    addLog_P(LOG_LEVEL_DEBUG, PSTR("SHT1X: Sensor did not ACK command"));
+    sht_type = 0;
+    AddLog_P(LOG_LEVEL_DEBUG, PSTR(D_LOG_SHT1 D_SENSOR_DID_NOT_ACK_COMMAND));
   }
   return (!ackerror);
 }
 
-boolean sht_awaitResult()
+boolean ShtAwaitResult()
 {
   // Maximum 320ms for 14 bit measurement
   for (byte i = 0; i < 16; i++) {
@@ -91,12 +91,12 @@ boolean sht_awaitResult()
     }
     delay(20);
   }
-  addLog_P(LOG_LEVEL_DEBUG, PSTR("SHT1X: Data not ready"));
-  shttype = 0;
+  AddLog_P(LOG_LEVEL_DEBUG, PSTR(D_LOG_SHT1 D_SENSOR_BUSY));
+  sht_type = 0;
   return false;
 }
 
-int sht_readData()
+int ShtReadData()
 {
   int val = 0;
 
@@ -117,7 +117,7 @@ int sht_readData()
   return val;
 }
 
-boolean sht_readTempHum(float &t, float &h)
+boolean ShtReadTempHum(float &t, float &h)
 {
   float tempRaw;
   float humRaw;
@@ -126,27 +126,27 @@ boolean sht_readTempHum(float &t, float &h)
   t = NAN;
   h = NAN;
 
-  if (!sht_reset()) {
+  if (!ShtReset()) {
     return false;
   }
-  if (!sht_sendCommand(SHT1X_CMD_MEASURE_TEMP)) {
+  if (!ShtSendCommand(SHT1X_CMD_MEASURE_TEMP)) {
     return false;
   }
-  if (!sht_awaitResult()) {
+  if (!ShtAwaitResult()) {
     return false;
   }
-  tempRaw = sht_readData();
+  tempRaw = ShtReadData();
   // Temperature conversion coefficients from SHT1X datasheet for version 4
   const float d1 = -39.7;  // 3.5V
   const float d2 = 0.01;   // 14-bit
   t = d1 + (tempRaw * d2);
-  if (!sht_sendCommand(SHT1X_CMD_MEASURE_RH)) {
+  if (!ShtSendCommand(SHT1X_CMD_MEASURE_RH)) {
     return false;
   }
-  if (!sht_awaitResult()) {
+  if (!ShtAwaitResult()) {
     return false;
   }
-  humRaw = sht_readData();
+  humRaw = ShtReadData();
   // Temperature conversion coefficients from SHT1X datasheet for version 4
   const float c1 = -2.0468;
   const float c2 = 0.0367;
@@ -155,83 +155,90 @@ boolean sht_readTempHum(float &t, float &h)
   const float t2 = 0.00008;
   rhLinear = c1 + c2 * humRaw + c3 * humRaw * humRaw;
   h = (t - 25) * (t1 + t2 * humRaw) + rhLinear;
-  t = convertTemp(t);
+  t = ConvertTemp(t);
   return (!isnan(t) && !isnan(h));
 }
 
-boolean sht_readCharTempHum(char* temp, char* hum)
-{
-  float t;
-  float h;
+/********************************************************************************************/
 
-  boolean success = sht_readTempHum(t, h);
-  dtostrf(t, 1, sysCfg.flag.temperature_resolution, temp);
-  dtostrf(h, 1, sysCfg.flag.humidity_resolution, hum);
-  return success;
-}
-
-boolean sht_detect()
+boolean ShtDetect()
 {
-  if (shttype) {
+  if (sht_type) {
     return true;
   }
 
   float t;
   float h;
-  
+
   sht_sda_pin = pin[GPIO_I2C_SDA];
   sht_scl_pin = pin[GPIO_I2C_SCL];
-  if (sht_readTempHum(t, h)) {
-    shttype = 1;
-    addLog_P(LOG_LEVEL_DEBUG, PSTR("I2C: SHT1X found"));
+  if (ShtReadTempHum(t, h)) {
+    sht_type = 1;
+    AddLog_P(LOG_LEVEL_DEBUG, PSTR(D_LOG_I2C D_SHT1X_FOUND));
   } else {
     Wire.begin(sht_sda_pin, sht_scl_pin);
-    shttype = 0;
+    sht_type = 0;
   }
-  return shttype;
+  return sht_type;
+}
+
+void ShtShow(boolean json)
+{
+  if (sht_type) {
+    float t;
+    float h;
+
+    if (ShtReadTempHum(t, h)) {
+      char temperature[10];
+      char humidity[10];
+
+      dtostrfd(t, Settings.flag.temperature_resolution, temperature);
+      dtostrfd(h, Settings.flag.humidity_resolution, humidity);
+
+      if (json) {
+        snprintf_P(mqtt_data, sizeof(mqtt_data), JSON_SNS_TEMPHUM, mqtt_data, "SHT1X", temperature, humidity);
+#ifdef USE_DOMOTICZ
+        DomoticzTempHumSensor(temperature, humidity);
+#endif  // USE_DOMOTICZ
+#ifdef USE_WEBSERVER
+      } else {
+        snprintf_P(mqtt_data, sizeof(mqtt_data), HTTP_SNS_TEMP, mqtt_data, "SHT1X", temperature, TempUnit());
+        snprintf_P(mqtt_data, sizeof(mqtt_data), HTTP_SNS_HUM, mqtt_data, "SHT1X", humidity);
+#endif  // USE_WEBSERVER
+      }
+    }
+  }
 }
 
 /*********************************************************************************************\
- * Presentation
+ * Interface
 \*********************************************************************************************/
 
-void sht_mqttPresent(char* svalue, uint16_t ssvalue, uint8_t* djson)
+#define XSNS_07
+
+boolean Xsns07(byte function)
 {
-  if (!shttype) {
-    return;
-  }
+  boolean result = false;
 
-  char stemp[10];
-  char shum[10];
-  
-  if (sht_readCharTempHum(stemp, shum)) {
-    snprintf_P(svalue, ssvalue, JSON_SNS_TEMPHUM, svalue, "SHT1X", stemp, shum);
-    *djson = 1;
-#ifdef USE_DOMOTICZ
-    domoticz_sensor2(stemp, shum);
-#endif  // USE_DOMOTICZ
-  }
-}
-
+  if (i2c_flg) {
+    switch (function) {
+//      case FUNC_XSNS_INIT:
+//        break;
+      case FUNC_XSNS_PREP:
+        ShtDetect();
+        break;
+      case FUNC_XSNS_JSON_APPEND:
+        ShtShow(1);
+        break;
 #ifdef USE_WEBSERVER
-String sht_webPresent()
-{
-  String page = "";
-  if (shttype) {
-    char stemp[10];
-    char shum[10];
-    
-    if (sht_readCharTempHum(stemp, shum)) {
-      char sensor[80];
-      snprintf_P(sensor, sizeof(sensor), HTTP_SNS_TEMP, "SHT1X", stemp, tempUnit());
-      page += sensor;
-      snprintf_P(sensor, sizeof(sensor), HTTP_SNS_HUM, "SHT1X", shum);
-      page += sensor;
+      case FUNC_XSNS_WEB:
+        ShtShow(0);
+        break;
+#endif  // USE_WEBSERVER
     }
   }
-  return page;
+  return result;
 }
-#endif  // USE_WEBSERVER
+
 #endif  // USE_SHT
 #endif  // USE_I2C
-
