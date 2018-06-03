@@ -1,7 +1,7 @@
 /*
   xsns_04_snfsc.ino - sonoff SC support for Sonoff-Tasmota
 
-  Copyright (C) 2017  Theo Arends
+  Copyright (C) 2018  Theo Arends
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -105,7 +105,7 @@ void SonoffScSerialInput(char *rcvstat)
 
 #ifdef USE_WEBSERVER
 const char HTTP_SNS_SCPLUS[] PROGMEM =
-  "%s{s}" D_LIGHT "{m}%d%{e}{s}" D_NOISE "{m}%d%{e}{s}" D_AIR_QUALITY "{m}%d%{e}";  // {s} = <tr><th>, {m} = </th><td>, {e} = </td></tr>
+  "%s{s}" D_LIGHT "{m}%d%%{e}{s}" D_NOISE "{m}%d%%{e}{s}" D_AIR_QUALITY "{m}%d%%{e}";  // {s} = <tr><th>, {m} = </th><td>, {e} = </td></tr>
 #endif  // USE_WEBSERVER
 
 void SonoffScShow(boolean json)
@@ -116,16 +116,28 @@ void SonoffScShow(boolean json)
 
     float t = ConvertTemp(sc_value[1]);
     float h = sc_value[0];
-    dtostrfd(t, Settings.flag.temperature_resolution, temperature);
-    dtostrfd(h, Settings.flag.humidity_resolution, humidity);
+    dtostrfd(t, Settings.flag2.temperature_resolution, temperature);
+    dtostrfd(h, Settings.flag2.humidity_resolution, humidity);
 
     if (json) {
-      snprintf_P(mqtt_data, sizeof(mqtt_data), PSTR("%s, \"" D_TEMPERATURE "\":%s, \"" D_HUMIDITY "\":%s, \"" D_LIGHT "\":%d, \"" D_NOISE "\":%d, \"" D_AIRQUALITY "\":%d"),
+      snprintf_P(mqtt_data, sizeof(mqtt_data), PSTR("%s,\"SonoffSC\":{\"" D_JSON_TEMPERATURE "\":%s,\"" D_JSON_HUMIDITY "\":%s,\"" D_JSON_LIGHT "\":%d,\"" D_JSON_NOISE "\":%d,\"" D_JSON_AIRQUALITY "\":%d}"),
         mqtt_data, temperature, humidity, sc_value[2], sc_value[3], sc_value[4]);
 #ifdef USE_DOMOTICZ
-      DomoticzTempHumSensor(temperature, humidity);
-      DomoticzSensor(DZ_ILLUMINANCE, sc_value[2]);
+      if (0 == tele_period) {
+        DomoticzTempHumSensor(temperature, humidity);
+        DomoticzSensor(DZ_ILLUMINANCE, sc_value[2]);
+        DomoticzSensor(DZ_COUNT, sc_value[3]);
+        DomoticzSensor(DZ_AIRQUALITY, 500 + ((100 - sc_value[4]) * 20));
+      }
 #endif  // USE_DOMOTICZ
+
+#ifdef USE_KNX
+      if (0 == tele_period) {
+        KnxSensor(KNX_TEMPERATURE, t);
+        KnxSensor(KNX_HUMIDITY, h);
+      }
+#endif  // USE_KNX
+
 #ifdef USE_WEBSERVER
     } else {
       snprintf_P(mqtt_data, sizeof(mqtt_data), HTTP_SNS_TEMP, mqtt_data, "", temperature, TempUnit());
@@ -148,15 +160,14 @@ boolean Xsns04(byte function)
 
   if (SONOFF_SC == Settings.module) {
     switch (function) {
-//      case FUNC_XSNS_INIT:
-//        break;
-//      case FUNC_XSNS_PREP:
-//        break;
-      case FUNC_XSNS_JSON_APPEND:
+      case FUNC_INIT:
+        SonoffScInit();
+        break;
+      case FUNC_JSON_APPEND:
         SonoffScShow(1);
         break;
 #ifdef USE_WEBSERVER
-      case FUNC_XSNS_WEB:
+      case FUNC_WEB_APPEND:
         SonoffScShow(0);
         break;
 #endif  // USE_WEBSERVER

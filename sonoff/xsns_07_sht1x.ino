@@ -1,7 +1,7 @@
 /*
   xsns_07_sht1x.ino - SHT1x temperature and sensor support for Sonoff-Tasmota
 
-  Copyright (C) 2017  Theo Arends
+  Copyright (C) 2018  Theo Arends
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -24,6 +24,8 @@
  *
  * Reading temperature and humidity takes about 320 milliseconds!
  * Source: Marinus vd Broek https://github.com/ESP8266nu/ESPEasy
+ *
+ * I2C Address: None
 \*********************************************************************************************/
 
 enum {
@@ -161,10 +163,10 @@ boolean ShtReadTempHum(float &t, float &h)
 
 /********************************************************************************************/
 
-boolean ShtDetect()
+void ShtDetect()
 {
   if (sht_type) {
-    return true;
+    return;
   }
 
   float t;
@@ -179,7 +181,6 @@ boolean ShtDetect()
     Wire.begin(sht_sda_pin, sht_scl_pin);
     sht_type = 0;
   }
-  return sht_type;
 }
 
 void ShtShow(boolean json)
@@ -192,14 +193,22 @@ void ShtShow(boolean json)
       char temperature[10];
       char humidity[10];
 
-      dtostrfd(t, Settings.flag.temperature_resolution, temperature);
-      dtostrfd(h, Settings.flag.humidity_resolution, humidity);
+      dtostrfd(t, Settings.flag2.temperature_resolution, temperature);
+      dtostrfd(h, Settings.flag2.humidity_resolution, humidity);
 
       if (json) {
         snprintf_P(mqtt_data, sizeof(mqtt_data), JSON_SNS_TEMPHUM, mqtt_data, "SHT1X", temperature, humidity);
 #ifdef USE_DOMOTICZ
-        DomoticzTempHumSensor(temperature, humidity);
+        if (0 == tele_period) DomoticzTempHumSensor(temperature, humidity);
 #endif  // USE_DOMOTICZ
+
+#ifdef USE_KNX
+        if (0 == tele_period) {
+          KnxSensor(KNX_TEMPERATURE, t);
+          KnxSensor(KNX_HUMIDITY, h);
+        }
+#endif  // USE_KNX
+
 #ifdef USE_WEBSERVER
       } else {
         snprintf_P(mqtt_data, sizeof(mqtt_data), HTTP_SNS_TEMP, mqtt_data, "SHT1X", temperature, TempUnit());
@@ -222,16 +231,14 @@ boolean Xsns07(byte function)
 
   if (i2c_flg) {
     switch (function) {
-//      case FUNC_XSNS_INIT:
-//        break;
-      case FUNC_XSNS_PREP:
+      case FUNC_PREP_BEFORE_TELEPERIOD:
         ShtDetect();
         break;
-      case FUNC_XSNS_JSON_APPEND:
+      case FUNC_JSON_APPEND:
         ShtShow(1);
         break;
 #ifdef USE_WEBSERVER
-      case FUNC_XSNS_WEB:
+      case FUNC_WEB_APPEND:
         ShtShow(0);
         break;
 #endif  // USE_WEBSERVER

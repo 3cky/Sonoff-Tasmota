@@ -1,7 +1,7 @@
 /*
   xsns_01_counter.ino - Counter sensors (water meters, electricity meters etc.) sensor support for Sonoff-Tasmota
 
-  Copyright (C) 2017  Maarten Damen and Theo Arends
+  Copyright (C) 2018  Maarten Damen and Theo Arends
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -59,6 +59,8 @@ void CounterUpdate4()
   CounterUpdate(4);
 }
 
+/********************************************************************************************/
+
 void CounterSaveState()
 {
   for (byte i = 0; i < MAX_COUNTERS; i++) {
@@ -67,8 +69,6 @@ void CounterSaveState()
     }
   }
 }
-
-/********************************************************************************************/
 
 void CounterInit()
 {
@@ -90,9 +90,11 @@ const char HTTP_SNS_COUNTER[] PROGMEM =
 
 void CounterShow(boolean json)
 {
+  char stemp[10];
   char counter[16];
 
   byte dsxflg = 0;
+  byte header = 0;
   for (byte i = 0; i < MAX_COUNTERS; i++) {
     if (pin[GPIO_CNTR1 +i] < 99) {
       if (bitRead(Settings.pulse_counter_type, i)) {
@@ -103,9 +105,15 @@ void CounterShow(boolean json)
       }
 
       if (json) {
-        snprintf_P(mqtt_data, sizeof(mqtt_data), PSTR("%s, \"" D_COUNTER "%d\":%s"), mqtt_data, i +1, counter);
+        if (!header) {
+          snprintf_P(mqtt_data, sizeof(mqtt_data), PSTR("%s,\"COUNTER\":{"), mqtt_data);
+          stemp[0] = '\0';
+        }
+        header++;
+        snprintf_P(mqtt_data, sizeof(mqtt_data), PSTR("%s%s\"C%d\":%s"), mqtt_data, stemp, i +1, counter);
+        strcpy(stemp, ",");
 #ifdef USE_DOMOTICZ
-        if (1 == dsxflg) {
+        if ((0 == tele_period) && (1 == dsxflg)) {
           DomoticzSensor(DZ_COUNT, RtcSettings.pulse_counter[i]);
           dsxflg++;
         }
@@ -115,6 +123,11 @@ void CounterShow(boolean json)
         snprintf_P(mqtt_data, sizeof(mqtt_data), HTTP_SNS_COUNTER, mqtt_data, i +1, counter, (bitRead(Settings.pulse_counter_type, i)) ? " " D_UNIT_SECOND : "");
 #endif  // USE_WEBSERVER
       }
+    }
+  }
+  if (json) {
+    if (header) {
+      snprintf_P(mqtt_data, sizeof(mqtt_data), PSTR("%s}"), mqtt_data);
     }
   }
 }
@@ -130,19 +143,20 @@ boolean Xsns01(byte function)
   boolean result = false;
 
   switch (function) {
-    case FUNC_XSNS_INIT:
+    case FUNC_INIT:
       CounterInit();
       break;
-//    case FUNC_XSNS_PREP:
-//      break;
-    case FUNC_XSNS_JSON_APPEND:
+    case FUNC_JSON_APPEND:
       CounterShow(1);
       break;
 #ifdef USE_WEBSERVER
-    case FUNC_XSNS_WEB:
+    case FUNC_WEB_APPEND:
       CounterShow(0);
       break;
 #endif  // USE_WEBSERVER
+    case FUNC_SAVE_BEFORE_RESTART:
+      CounterSaveState();
+      break;
   }
   return result;
 }
